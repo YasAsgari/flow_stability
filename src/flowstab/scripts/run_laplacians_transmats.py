@@ -252,12 +252,7 @@ else:
 
         slice_length = (tend-t0)/num_slices
 
-    time_slices = [t0]
-    t = t0
-    while t < tend:
-        t += slice_length
-        time_slices.append(t)
-
+time_slices = np.arange(t0, tend + slice_length, slice_length).tolist()
 t_starts = time_slices[:-1]
 t_stops = time_slices[1:]
 
