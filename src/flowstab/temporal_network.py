@@ -40,7 +40,7 @@ from scipy.sparse import (
     lil_matrix,
 )
 from scipy.sparse.csgraph import connected_components
-from scipy.sparse.linalg import eigsh, expm
+from scipy.sparse.linalg import eigsh, expm, eigh
 
 from .parallel_expm import compute_subspace_expm_parallel
 from .sparse_stoch_mat import inplace_csr_row_normalize, SparseStochMat
@@ -98,7 +98,7 @@ class ContTempNetwork:
     _TARGETS = "target_nodes"
     _STARTS = "starting_times"
     _ENDINGS = "ending_times"
-    _MANDATORY = [_SOURCES, _TARGETS, _STARTS]
+    #_MANDATORY = [_SOURCES, _TARGETS, _STARTS]
     _ESSENTIAL = [_SOURCES, _TARGETS, _STARTS, _ENDINGS]
     # to hold endings - starts
     _DURATIONS = "durations"
@@ -118,18 +118,20 @@ class ContTempNetwork:
                  **kwargs):
 
         if events_table is None:
+            #check whether columns are given and have the same length
             assert len(source_nodes) == len(target_nodes) == \
                    len(starting_times) == len(ending_times)
 
             if relabel_nodes:
                # relabel nodes from 0 to num_nodes and save
                 # original labels in self.node_to_label_dict
-                all_nodes = set()
-                all_nodes.update(source_nodes)
-                all_nodes.update(target_nodes)
-                self.label_to_node_dict = {l : n for n, l in enumerate(sorted(all_nodes))}
+                self.all_nodes = set()
+                self.all_nodes.update(source_nodes)
+                self.all_nodes.update(target_nodes)
+                self.label_to_node_dict = {l : n for n, l in enumerate(sorted(self.all_nodes))}
                 self.node_to_label_dict = {n : l for l, n in self.label_to_node_dict.items()}
 
+                #update the source and target nodes with the new labels
                 source_nodes = [self.label_to_node_dict[n] for n in source_nodes]
                 target_nodes = [self.label_to_node_dict[n] for n in target_nodes]
             else:
@@ -139,10 +141,10 @@ class ContTempNetwork:
                                                   "target_nodes" : target_nodes,
                                                   "starting_times" : starting_times,
                                                   "ending_times" : ending_times}
-            columns=["source_nodes","target_nodes",
-                                             "starting_times","ending_times"]
+            columns=self._ESSENTIAL
 
             if extra_attrs is not None:
+                #check that extra_attrs is a dict with lists of the same length as source_nodes
                 assert isinstance(extra_attrs, dict)
 
                 for attr_name, val_list in extra_attrs.items():
@@ -184,10 +186,10 @@ class ContTempNetwork:
                 )                               
             reset_event_table_index = False     
             if relabel_nodes:                   
-                all_nodes = set()
-                all_nodes.update(events_table.source_nodes.tolist())
-                all_nodes.update(events_table.target_nodes.tolist())
-                self.label_to_node_dict = {l : n for n, l in enumerate(sorted(all_nodes))}
+                self.all_nodes = set()
+                self.all_nodes.update(events_table.source_nodes.tolist())
+                self.all_nodes.update(events_table.target_nodes.tolist())
+                self.label_to_node_dict = {l : n for n, l in enumerate(sorted(self.all_nodes))}
                 self.node_to_label_dict = {n : l for l, n in self.label_to_node_dict.items()}
             else:
                 self.node_to_label_dict=node_to_label_dict
@@ -196,8 +198,8 @@ class ContTempNetwork:
         if reset_event_table_index:
             self.events_table.reset_index(inplace=True, drop=True)
 
-        self.node_array = np.sort(pd.unique(self.events_table[["source_nodes",
-                                    "target_nodes"]].values.ravel("K")))
+
+        self.node_array = np.sort(np.array(list(self.all_nodes)))
 
         self.num_nodes = self.node_array.shape[0]
 
@@ -409,8 +411,6 @@ class ContTempNetwork:
                                    save_delta=False,
                                    replace_existing=False):
         """ 
-        
-            
         Saves all the inter transition matrices in `self.inter_T[lamda]` 
         in a pickle file togheter  with a dictionary including parameters: 
         `_k_start_laplacians`, `_k_stop_laplacians`, `_t_start_laplacians`,
@@ -1041,53 +1041,48 @@ class ContTempNetwork:
         del load_dict
 
         return return_dict
-
-
+    
     def compute_static_adjacency_matrix(self,
-                               start_time=None,
-                               end_time=None):
+                            start_time=None,
+                            end_time=None):
+        
         """Returns the adjacency matrix of the static network built from the
-        aggregagted edge activity between `start_time` and `end_time`.
+            aggregagted edge activity between `start_time` and `end_time`.
 
-        Parameters
-        ----------
-        start_time : float or int, optional
-            Starting time for the aggregation. The default is None, i.e. the 
-            start time of the entire temporal network.
-        end_time : float or int, optional
-            Ending time for the aggregation. The default is None, i.e. the 
-            end time of the entire temporal network.
+            Parameters
+            ----------
+            start_time : float or int, optional
+                Starting time for the aggregation. The default is None, i.e. the 
+                start time of the entire temporal network.
+            end_time : float or int, optional
+                Ending time for the aggregation. The default is None, i.e. the 
+                end time of the entire temporal network.
 
-        Returns
-        -------
-        CSR sparse matrix
-            Symmetric adjacency matrix, where element ij is equal to the 
-            aggregated time during which egde ij was active after `start_time` 
-            and before `end_time`.
+            Returns
+            -------
+            CSR sparse matrix
+                Symmetric adjacency matrix, where element ij is equal to the 
+                aggregated time during which egde ij was active after `start_time` 
+                and before `end_time`.
 
-        """
+            """
         if start_time is None:
             start_time = self.start_time
-
         if end_time is None:
             end_time = self.end_time
 
         mask = np.logical_and(self.events_table.starting_times < end_time,
                               self.events_table.ending_times > start_time)
+        ev = self.events_table.loc[mask]
+        # Vectorized overlap calculation
+        data = (np.minimum(ev.ending_times.values, end_time) -
+                np.maximum(ev.starting_times.values, start_time))
 
-        # loop on events
-        data = []
-        cols = []
-        rows = []
-        for ev in self.events_table.loc[mask].itertuples():
-            data.append(min(ev.ending_times, end_time) - max(ev.starting_times, start_time))
-            rows.append(ev.source_nodes)
-            cols.append(ev.target_nodes)
-
-        A = coo_matrix((data, (rows,cols)),
-                       shape=(self.num_nodes, self.num_nodes))
-
-        return A + A.T
+        A = coo_matrix(
+            (data, (ev.source_nodes.values, ev.target_nodes.values)),
+            shape=(self.num_nodes, self.num_nodes)
+        )
+        return (A + A.T).tocsr()
 
 
     def _compute_time_grid(self):
