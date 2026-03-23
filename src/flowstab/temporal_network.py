@@ -1114,7 +1114,7 @@ class ContTempNetwork:
             .set_index(["times", "id"])        # group events with same times
             .sort_index()
         )        
-        self.times = self.time_grid.index.get_level_values(0).unique().to_list()
+        self.times = self.time_grid.index.get_level_values(0).unique().to_numpy()
 
     def _get_closest_time(self, t):
         """Return closest smaller or equal time in `times` and its index"""
