@@ -1093,29 +1093,27 @@ class ContTempNetwork:
         Also creates `self.times`, an array with all the times values.
             
         """
-        self.time_grid = pd.DataFrame(
-            columns=["times", "id", "is_start"],
-            index=range(self.events_table.shape[0]*2)
+        et = self.events_table.reset_index()
+        starts = pd.DataFrame({
+            "times":    et["starting_times"].values,
+            "id":       et["index"].values,
+            "is_start": True,
+        })
+
+        ends = pd.DataFrame({
+            "times":    et["ending_times"].values,
+            "id":       et["index"].values,
+            "is_start": False,
+        })
+
+        self.time_grid = (
+            pd.concat([starts, ends], ignore_index=True)
+            .assign(times=lambda df: pd.to_numeric(df["times"]))
+            .sort_values("times")
+            .set_index(["times", "id"])        # group events with same times
+            .sort_index()
         )
-        self.time_grid.iloc[:self.events_table.shape[0],[0,1]] = \
-                     self.events_table.reset_index()[["starting_times","index"]]
-        self.time_grid["is_start"] = False
-        self.time_grid.loc[0:self.events_table.shape[0]-1,"is_start"] = True
-
-        self.time_grid.iloc[self.events_table.shape[0]:,[0,1]] = \
-                      self.events_table.reset_index()[["ending_times","index"]]
-
-        self.time_grid.times = pd.to_numeric(self.time_grid.times)
-
-        self.time_grid.sort_values("times", inplace=True)
-
-        # group events with same times
-        self.time_grid.set_index(["times", "id"], inplace=True)
-
-        self.time_grid.sort_index(inplace=True)
-
-        self.times = self.time_grid.index.levels[0]
-
+        self.times = self.time_grid.index.get_level_values(0).unique()
 
     def _get_closest_time(self, t):
         """Return closest smaller or equal time in `times` and its index"""
