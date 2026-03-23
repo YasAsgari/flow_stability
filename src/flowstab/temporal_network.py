@@ -1113,6 +1113,8 @@ class ContTempNetwork:
             .set_index(["times", "id"])        # group events with same times
             .sort_index()
         )
+        print("PID ", os.getpid(), " : "," time grid computed.")
+        
         self.times = self.time_grid.index.get_level_values(0).unique().to_numpy()
 
     def _get_closest_time(self, t):
