@@ -40,7 +40,8 @@ from scipy.sparse import (
     lil_matrix,
 )
 from scipy.sparse.csgraph import connected_components
-from scipy.sparse.linalg import eigsh, expm, eigh
+from scipy.sparse.linalg import eigsh, expm
+from scipy.linalg import eigh
 
 from .parallel_expm import compute_subspace_expm_parallel
 from .sparse_stoch_mat import inplace_csr_row_normalize, SparseStochMat
@@ -1112,10 +1113,8 @@ class ContTempNetwork:
             .sort_values("times")
             .set_index(["times", "id"])        # group events with same times
             .sort_index()
-        )
-        print("PID ", os.getpid(), " : "," time grid computed.")
-        
-        self.times = self.time_grid.index.get_level_values(0).unique().to_numpy()
+        )        
+        self.times = self.time_grid.index.get_level_values(0).unique().to_list()
 
     def _get_closest_time(self, t):
         """Return closest smaller or equal time in `times` and its index"""
