@@ -1082,7 +1082,7 @@ class ContTempNetwork:
             (data, (ev.source_nodes.values, ev.target_nodes.values)),
             shape=(self.num_nodes, self.num_nodes)
         )
-        return (A + A.T).tocsr()
+        return (A + A.T)
 
 
     def _compute_time_grid(self):
